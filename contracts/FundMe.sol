@@ -1,33 +1,68 @@
 // SPDX-License-Identifier: GPL-3.0
 
-pragma solidity 0.8.8;
+pragma solidity ^0.8.8;
 
-import "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
+import './PriceConverter.sol';
+
+
+error NotOwner();
 
 contract FundMe {
 
-    uint256 public minimumUSD = 50 * 1e18; // 1e18 is for 1 eth == 1 wei (18 zeroes)
+    using PriceConverter for uint256;
+
+    uint256 public constant MINIMUM_USD = 10 * 1e18; // 1e18 is for 1 eth == 1 wei (18 zeroes)
+
+    address[] public funders;
+    mapping(address => uint256) public addressToAmountFunded;
+    
+    address public immutable owner;
+     
+    constructor() {
+        owner = msg.sender;
+    }
 
     function fund() public payable {
-       require(getConversionRate(msg.value) >= minimumUSD, "Send More ETH");
+        require(msg.value.getConversionRate() >= MINIMUM_USD, "Send More ETH");
+        funders.push(msg.sender);
+        addressToAmountFunded[msg.sender] += msg.value;
     }
 
-    function getVersion() public view returns (uint256){
-        // ETH/USD price feed address of Goerli Network.
-        AggregatorV3Interface priceFeed = AggregatorV3Interface(0xD4a33860578De61DBAbDc8BFdb98FD742fA7028e);
-        return priceFeed.version();
+    function withdraw() public onlyOwner {        
+
+        for(uint256 funderIndex = 0; funderIndex < funders.length; funderIndex++) {
+            address funder = funders[funderIndex];
+            addressToAmountFunded[funder] = 0;
+        }
+
+        // reset the array
+        funders = new address[](0);
+        // actually withdraw the funds
+
+        // transfer (2300 gas, throws error)
+        // payable(msg.sender).transfer(address(this).balance);
+        
+        // send (2300 gas, returns bool)
+        // bool sendSuccess = payable(msg.sender).send(address(this).balance);
+        // require(sendSuccess, "Send failed");
+        
+        // call (forward all gas or set gas, returns bool)
+        (bool callSuccess, bytes memory dataReturned) = payable(msg.sender).call{value: address(this).balance}("");
+        require(callSuccess, "Call failed");
     }
 
-    function getPrice() public view returns (uint256) {
-        AggregatorV3Interface priceFeed = AggregatorV3Interface(0xA39434A63A52E749F02807ae27335515BA4b07F7);
-        (,int256 price,,,) = priceFeed.latestRoundData();
-        // price feed returns value with decimal upto 8 decimals.  We need to convert this interms of wei which have 18 zeros, so we need to append 10 zeros
-        return uint256(price * 1e10);
+    modifier onlyOwner {
+        if(msg.sender != owner)  { revert NotOwner();}
+        // require(msg.sender == owner, "Sender is not owner");
+        _;  // ----> indicates to run the rest of the code
     }
 
-    function getConversionRate(uint256 ethAmount) public view returns (uint256) {
-        uint256 ethPrice = getPrice();
-        uint256 ethAmountInUSD = (ethPrice * ethAmount) / 1e18;
-        return ethAmountInUSD;
+
+    receive() external payable {
+        fund();
+    }
+
+    fallback() external payable {
+        fund();
     }
 }
