@@ -4,24 +4,44 @@
 // You can also run a script with `npx hardhat run <script>`. If you do that, Hardhat
 // will compile your contracts, add the Hardhat Runtime Environment's members to the
 // global scope, and execute the script.
-const hre = require("hardhat");
+const { ethers, run, network } = require("hardhat");
+require("dotenv").config();
 
 async function main() {
-  const currentTimestampInSeconds = Math.round(Date.now() / 1000);
-  const unlockTime = currentTimestampInSeconds + 60;
+  const SimpleStroageFactory = await ethers.getContractFactory("SimpleStorage");
+  console.log("Deploying Contract....");
+  const simpleStorage = await SimpleStroageFactory.deploy();
+  await simpleStorage.deployed();
+  console.log(`Deployed contract to : ${simpleStorage.address}`);
 
-  const lockedAmount = hre.ethers.utils.parseEther("0.001");
+  if (network.config.chainId === 5 && process.env.ETHERSCAN_API_KEY) {
+    await simpleStorage.deployTransaction.wait(6);
+    await verify(simpleStorage.address, []);
+  }
 
-  const Lock = await hre.ethers.getContractFactory("Lock");
-  const lock = await Lock.deploy(unlockTime, { value: lockedAmount });
+  const currentValue = await simpleStorage.retrieve();
+  console.log(`Current Value: ${currentValue}`);
 
-  await lock.deployed();
+  const transactionResponse = await simpleStorage.store(7);
+  await transactionResponse.wait(1);
+  const updatedValue = await simpleStorage.retrieve();
+  console.log(`Updated value: ${updatedValue}`);
+}
 
-  console.log(
-    `Lock with ${ethers.utils.formatEther(
-      lockedAmount
-    )}ETH and unlock timestamp ${unlockTime} deployed to ${lock.address}`
-  );
+async function verify(contractAddress, args) {
+  console.log("Verifying contract...");
+  try {
+    await run("verify:verify", {
+      address: contractAddress,
+      constructoryArguments: args,
+    });
+  } catch (e) {
+    if (e.message.toLowerCase().includes("already verified")) {
+      console.log("Already Verified");
+    } else {
+      console.log(e);
+    }
+  }
 }
 
 // We recommend this pattern to be able to use async/await everywhere
