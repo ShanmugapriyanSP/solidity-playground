@@ -131,3 +131,7 @@ dist
 
 # custom
 .encryptedKey*
+gas-report.txt
+coverage.json
+artifacts
+cache
